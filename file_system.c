@@ -201,13 +201,145 @@ int CR(char* filename, int size) {
   return 0;
 }
 
+// Function to update the parent directory's block with the new directory entry
+void updateParentDirectory(const char* parent_dirname, int new_directory_inode) {
+  // Find the parent directory's inode
+  inode* parent_inode = NULL;
+  for (int i = 3; i < NUM_BLOCKS; i++) {
+    inode* fnode = (inode*)myfs[i];
+    if (fnode->used && strcmp(fnode->name, parent_dirname) == 0) {
+        parent_inode = fnode;
+          break;
+      }
+  }
+
+// Check if the parent directory's fnode was found
+  if (parent_inode == NULL) {
+      printf("Error: Parent directory '%s' not found.\n", parent_dirname);
+      return;
+  }
+
+  // Find the parent directory's data block
+  int parent_block_index = parent_inode->blockptrs[0];
+  char* parent_block = myfs[parent_block_index];
+
+  // Create a new directory entry for the new directory
+  dirent new_entry;
+  strcpy(new_entry.name, "newdir"); // Replace with the actual directory name
+  new_entry.namelen = strlen(new_entry.name);
+  new_entry.inode = new_directory_inode;
+
+  // Append the new entry to the parent directory's block
+  int num_entries = parent_inode->size / sizeof(dirent);
+  memcpy(&parent_block[num_entries * sizeof(dirent)], &new_entry, sizeof(struct Dirent));
+
+  // Update the parent directory's size to reflect the new entry
+  parent_inode->size += sizeof(dirent);
+
+  // Save the changes to the parent directory's block
+  memcpy(myfs[parent_block_index], parent_block, BLOCK_SIZE);
+}
+
+
+
+// create directory
+int CD(const char* dir_name) {
+  
+  // Check if the directory already exists
+  for (int i = 3; i < NUM_BLOCKS; i++) {
+      inode* fnode = (inode*)myfs[i];
+      if (fnode->used && strcmp(fnode->name, dir_name) == 0) {
+          printf("Error: The directory '%s' already exists.\n", dir_name);
+          return -1;
+      }
+  }
+
+  // Extract the parent directory path
+  char path[strlen(dir_name) + 1];
+  strcpy(path, dir_name);
+  char* parent_dirname = dirname(path);
+
+  // Check if the parent directory exists
+  bool parent_dir_exists = false;
+  int parent_inode_index = -1;
+  for (int i = 3; i < NUM_BLOCKS; i++) {
+      inode* fnode = (inode*)myfs[i];
+      if (fnode->used && strcmp(fnode->name, parent_dirname) == 0) {
+          parent_dir_exists = true;
+          break;
+      }
+  }
+
+  if (!parent_dir_exists) {
+      printf("Error: The directory '%s' in the given path does not exist.\n", parent_dirname);
+      return -1;
+  }
+
+  // Create the new directory
+  inode new_inode;
+  new_inode.dir = 1; // It is a directory
+  strcpy(new_inode.name, dir_name);
+  new_inode.size = 0; // Directory size is initially 0
+  new_inode.used = 1; // It is in use
+  new_inode.rsvd = 0; // Not reserved for future use
+
+  // Allocate a data block for the directory
+  new_inode.blockptrs[0] = current_block++;
+
+  // Initialize the directory block 
+  dirent dir_entries[2];
+  strcpy(dir_entries[0].name, ".");  // Entry for the directory itself
+  dir_entries[0].namelen = 1;
+  dir_entries[0].inode = current_block;
+  
+  strcpy(dir_entries[1].name, ".."); // Entry for the parent directory
+  dir_entries[1].namelen = strlen(parent_dirname);
+  dir_entries[1].inode = parent_inode_index;
+
+  // Write the new inode to the file system
+  memcpy(myfs[current_block], &new_inode, sizeof(inode));
+  current_block++;
+
+  // Write the directory block to the file system
+  memcpy(myfs[current_block], dir_entries, sizeof(dir_entries));
+  current_block++;
+
+  // Write the new inode to the file system
+  memcpy(myfs[current_block++], &new_inode, sizeof(inode));
+
+  // Update the parent directory's block with the new directory entry
+  updateParentDirectory(parent_dirname, new_inode.blockptrs );
+  return 0;
+}
 
 // copy file
+int CP(char* src_name, char* dest_name) {
+
+  return 0;
+}
+
 // remove/delete file
+int DL(char* filename) {
+
+  return 0;
+}
+
 // move a file
+int MV(char* src_name, char* dest_name) {
+
+  return 0;
+}
+
 // list file info
-// create directory
+void LL () {
+
+}
+
 // remove a directory
+int DD(char* dirname) {
+
+  return 0;
+}
 
 
 // Function to write the hard disk state to the "myfs_f" file
@@ -225,6 +357,7 @@ void writeHardDiskState() {
 
     close(myfs_f);  
 }
+
 
 
 /*
@@ -264,13 +397,49 @@ int main (int argc, char* argv[]) {
         int size = atoi(strtok(NULL, " "));
         CR(filename, size);                 // CR function callled
         writeHardDiskState();               // Written to hard disk
+      } 
+      else if (strcmp(token, "CD") == 0) {
+        char* dirname = strtok(NULL, " ");
+        CD(dirname);
+
+        // updating the disk state
+        writeHardDiskState();
+      }
+      else if (strcmp(token, "DL") == 0) {
+        // parse and execute the DL command
+        char* filename = strtok(NULL, " ");
+        DL(filename);
+        writeHardDiskState();
+      } 
+      else if (strcmp(token, "CP") == 0) {
+        // parse and execute the CP command
+        char* src_name = strtok(NULL, " ");
+        char* dest_name = strtok(NULL, " ");
+        CP(src_name, dest_name);
+        writeHardDiskState();        
+      }
+      else if (strcmp(token, "MV") == 0) {
+        // parse and execute the MV command
+        char* src_name = strtok(NULL, " ");
+        char* dest_name = strtok(NULL, " ");
+        MV(src_name, dest_name);
+        writeHardDiskState();          
+      } 
+      else if (strcmp(token, "DD") == 0) {
+        // parse and execute the DD command
+        char* dir_name = strtok(NULL, " ");
+        DD(dir_name);
+        writeHardDiskState();
+      }
+      else if (strcmp(token, "LL") == 0) {
+        LL();
       }
     }
   }
     
     
     
-    // call appropriate function
   close(myfs_f);
+  fclose(input_file);
 	return 0;
 }
