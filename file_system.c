@@ -76,6 +76,7 @@ typedef struct dirent {
 
 char myfs[NUM_BLOCKS][BLOCK_SIZE];		// my file system root
 int myfs_f;
+int current_block = 3;                // starts allocating from block 3
 
 // Creating a function that initializes the memory
 
@@ -135,7 +136,72 @@ int mem_init() {
 /*
  * functions
  */
-// create file
+// create file function CR
+int CR(char* filename, int size) {
+
+  // Checking if file already exists
+  for (int i = 3; i < NUM_BLOCKS; i++) {
+    inode* fnode = (inode*)myfs[i];
+    if (fnode->used && cmp(fnode->name, filename) == 0) {
+      printf("Error: The file '%s' already exists.\n", filename );
+      return -1;
+    }
+  }
+
+  // Checking if directory exists already
+  char path[strlen(filename)+1];
+  strcpy(path, filename);
+  char *dir = dirname(path);
+  bool dir_exists = false;
+
+  for (int i = 3; i < NUM_BLOCKS; i++) {
+    inode* fnode = (inode*)myfs[i];
+    if (fnode->used && strcmp(fnode->name, dir) == 0) {
+      dir_exists = true;
+      break;
+    }
+  }
+
+  if (!dir_exists) {
+    printf("Error: The directory '%s' in the given path does not exist.\n", dir);
+    return -1;
+  }
+
+  // Calculating the number of blocks needed
+  int num_blocks_needed = (size + BLOCK_SIZE -1) / BLOCK_SIZE;
+
+  // Checking if it exceeds the limit
+  if (current_block + num_blocks_needed > NUM_BLOCKS) {
+    printf("Error: Not enough space available.\n");
+    return -1;
+  }
+
+  // Since all the checks now are done
+  // Creating the file
+  inode new_inode;
+  new_inode.dir = 0; // Not a directory
+  strcpy(new_inode.name, filename);
+  new_inode.size = size;
+  new_inode.used = 1; // It is in use
+  new_inode.rsvd = 0; // Not reserved for future use  
+
+
+  // Allocate data blocks and fill them with small alphabets
+  for (int i = 0; i < num_blocks_needed; i++) {
+      new_inode.blockptrs[i] = current_block++;
+      char data[BLOCK_SIZE];
+      for (int j = 0; j < BLOCK_SIZE; j++) {
+          data[j] = 'a' + (i % 26); // Fill with small alphabets [a-z]
+      }
+      memcpy(myfs[new_inode.blockptrs[i]], data, BLOCK_SIZE);
+  }
+
+  // Write the new inode to the file system
+  memcpy(myfs[current_block++], &new_inode, sizeof(inode));
+  return 0;
+}
+
+
 // copy file
 // remove/delete file
 // move a file
@@ -144,6 +210,21 @@ int mem_init() {
 // remove a directory
 
 
+// Function to write the hard disk state to the "myfs_f" file
+void writeHardDiskState() {
+  int myfs_f = open("myfs", O_CREAT | O_RDWR, 0666);
+    if (myfs_f == -1) {
+        printf("Error: Cannot create file system myfs");
+        exit(1);
+    }
+
+    for (int i = 0; i < NUM_BLOCKS; i++) {
+        lseek(myfs_f, i * BLOCK_SIZE, SEEK_SET);
+        write(myfs_f, myfs[i], BLOCK_SIZE);
+    }
+
+    close(myfs_f);  
+}
 
 
 /*
@@ -156,12 +237,38 @@ int main (int argc, char* argv[]) {
     myfs_f = mem_init();
   }
 
+  FILE *input_file = fopen("sample.txt", "r");
+  if (input_file == NULL) {
+    printf("Error opening file.\n");
+    exit(1);
+  }
 
+  char command[1000];
 
   // while not EOF
-    // read command
+  while (fgets(command, sizeof(command), input_file) != NULL) {
     
-    // parse command
+    // removing the next line character
+    size_t len = strlen(command);
+    if (len > 0 && command[len-1] == '\n') {
+      command[len-1] = '\0';    // replaced with NULL character
+    }
+
+    // read command by parsing it
+    char *token = strtok(command, " ");
+
+    if (token != NULL) {
+      if (strcmp(token, "CR") == 0) {
+        // Parse and execute the CR command
+        char* filename = strtok(NULL, " ");
+        int size = atoi(strtok(NULL, " "));
+        CR(filename, size);                 // CR function callled
+        writeHardDiskState();               // Written to hard disk
+      }
+    }
+  }
+    
+    
     
     // call appropriate function
   close(myfs_f);
